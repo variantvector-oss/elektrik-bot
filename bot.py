@@ -1,8 +1,7 @@
 import logging
 import os
 import asyncio
-import threading
-from flask import Flask
+from flask import Flask, request
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
 
@@ -13,6 +12,9 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
+
+# Создаём приложение один раз
+application = ApplicationBuilder().token(BOT_TOKEN).build()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -42,7 +44,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.error(f"Не удалось переслать сообщение: {e}")
     await update.message.reply_text("Заявка отправлена автору!")
 
-# --- FLASK ДЛЯ RENDER ---
+application.add_handler(CommandHandler('start', start))
+application.add_handler(CommandHandler('zayavka', zayavka))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+# Flask для вебхука
 app = Flask(__name__)
 
 @app.route('/')
@@ -53,19 +59,33 @@ def home():
 def health():
     return "OK"
 
-def run_bot():
-    # Создаём новый event loop для этого потока
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    
-    application = ApplicationBuilder().token(BOT_TOKEN).build()
-    application.add_handler(CommandHandler('start', start))
-    application.add_handler(CommandHandler('zayavka', zayavka))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    print("Бот запущен...")
-    application.run_polling()
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    """Принимаем обновления от Telegram."""
+    try:
+        update = Update.de_json(request.get_json(force=True), application.bot)
+        
+        # Запускаем обработку в новом event loop
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(application.process_update(update))
+        loop.close()
+    except Exception as e:
+        logging.error(f"Ошибка обработки: {e}")
+    return "OK", 200
 
 if __name__ == '__main__':
-    threading.Thread(target=run_bot).start()
+    # Устанавливаем вебхук при запуске
+    import requests
+    webhook_url = os.environ.get("WEBHOOK_URL", "https://elektrik-bot.onrender.com/webhook")
+    try:
+        response = requests.get(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook",
+            params={"url": webhook_url}
+        )
+        logging.info(f"Webhook set: {response.json()}")
+    except Exception as e:
+        logging.error(f"Не удалось установить вебхук: {e}")
+    
     port = int(os.environ.get('PORT', 8080))
     app.run(host='0.0.0.0', port=port)
