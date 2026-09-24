@@ -13,7 +13,6 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-# Создаём приложение один раз
 application = ApplicationBuilder().token(BOT_TOKEN).build()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -48,7 +47,6 @@ application.add_handler(CommandHandler('start', start))
 application.add_handler(CommandHandler('zayavka', zayavka))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-# Flask для вебхука
 app = Flask(__name__)
 
 @app.route('/')
@@ -61,11 +59,8 @@ def health():
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    """Принимаем обновления от Telegram."""
     try:
         update = Update.de_json(request.get_json(force=True), application.bot)
-        
-        # Запускаем обработку в новом event loop
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         loop.run_until_complete(application.process_update(update))
@@ -75,7 +70,6 @@ def webhook():
     return "OK", 200
 
 if __name__ == '__main__':
-    # Устанавливаем вебхук при запуске
     import requests
     webhook_url = os.environ.get("WEBHOOK_URL", "https://elektrik-bot.onrender.com/webhook")
     try:
