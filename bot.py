@@ -61,9 +61,16 @@ def health():
 def webhook():
     try:
         update = Update.de_json(request.get_json(force=True), application.bot)
+        
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        loop.run_until_complete(application.process_update(update))
+        
+        async def process():
+            if not application._initialized:
+                await application.initialize()
+            await application.process_update(update)
+        
+        loop.run_until_complete(process())
         loop.close()
     except Exception as e:
         logging.error(f"Ошибка обработки: {e}")
